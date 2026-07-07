@@ -1,0 +1,38 @@
+# Qwen3.6-35B-A3B (official FP8 checkpoint) on GB10 / DGX Spark via SGLang.
+#   docker compose up          (HF_TOKEN optional — model is not gated)
+services:
+  qwen-qwen3.6-35b-a3b-fp8-sglang:
+    image: picopapaya/qwen-qwen3.6-35b-a3b-fp8-sglang:latest
+    container_name: qwen-qwen3.6-35b-a3b-fp8-sglang
+    restart: unless-stopped
+    ipc: host               # SGLang needs a large shared-memory segment.
+    shm_size: "32gb"
+    environment:
+      HF_TOKEN: "${HF_TOKEN:-}"   # optional — avoids anonymous download rate limits
+      MODEL_ID: "Qwen/Qwen3.6-35B-A3B-FP8"
+      QUANTIZATION: "fp8"
+      KV_CACHE_DTYPE: "auto"
+      CONTEXT_LEN: "${CONTEXT_LEN:-262144}"
+      MEM_FRACTION: "${MEM_FRACTION:-0.85}"
+      MAX_RUNNING_REQUESTS: "4"
+      ENABLE_MTP: "${ENABLE_MTP:-0}"   # 1 = MTP speculative decoding (experimental on GB10)
+      # EXTRA_ARGS: "--disable-cuda-graph"
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    networks:
+      - llm-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  hf-cache:
+
+networks:
+  llm-net:
+    external: true
+    name: llm-net
