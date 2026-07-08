@@ -16,6 +16,7 @@ services:
       MEM_FRACTION: "${MEM_FRACTION:-0.85}"
       MAX_RUNNING_REQUESTS: "4"
       ENABLE_MTP: "${ENABLE_MTP:-0}"   # 1 = MTP speculative decoding (experimental on GB10)
+      ATTENTION_BACKEND: "${ATTENTION_BACKEND:-triton}"
       # EXTRA_ARGS: "--disable-cuda-graph"
     volumes:
       - hf-cache:/root/.cache/huggingface

@@ -8,12 +8,19 @@
 #   - Multimodal: includes a vision encoder (text + image input)
 #   - 262144-token native context; ships an MTP layer for speculative decoding
 #
-# Quantization — why FP8 over NVFP4 on SM121a (GB10):
-#   - FP8 (dynamic, e4m3) takes the native CUTLASS matmul path on SM121a.
-#   - NVFP4 MoE layers fall back to Marlin (FP4 → BF16 dequant in-kernel) on SM12x,
-#     and in a 35B-A3B MoE the expert layers are almost all of the weight.
-#   - Measured on this model class: FP8 wins at concurrency 1–4 (this box caps at 4);
-#     NVFP4 only pulls ahead at c8+, at the cost of more quantization error.
+# Quantization — FP8 vs NVFP4 on this hardware (GB10):
+#   - This chip runs FP8 math natively (fast path). NVFP4 has to be unpacked
+#     back to a bigger format before the chip can compute with it, which in
+#     theory should make it slower.
+#   - BUT we actually tested it (2026-07-08, one request at a time): NVFP4 was
+#     FASTER than FP8 — 65.6 tokens/sec vs 60.5 tokens/sec. This was a surprise
+#     — an earlier version of this note claimed the opposite, based on other
+#     people's online benchmarks rather than our own testing. That old claim
+#     was wrong, at least for our setup. Full numbers in
+#     ../nvidia-qwen3.6-35b-a3b-nvfp4-sglang.
+#   - What we haven't checked: whether this holds with several requests running
+#     at once (we only tested one at a time), and whether NVFP4's answers are
+#     as accurate as FP8's (smaller number formats can lose some precision).
 #   - Official Qwen checkpoint: vision encoder kept in BF16, MTP layer retained.
 #   - ~35 GB weights vs ~70 GB BF16 — no quantize-at-load cost, half the download.
 #

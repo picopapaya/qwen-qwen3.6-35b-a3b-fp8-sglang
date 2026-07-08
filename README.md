@@ -15,9 +15,13 @@ Qwen3.6-35B-A3B is a hybrid-attention Mixture-of-Experts vision-language model:
 
 ## FP8 vs NVFP4 on the GB10
 
-FP8 takes the GB10's native CUTLASS matmul path (SM_121a), while NVFP4 MoE layers fall back to the Marlin kernel, which dequantizes FP4 → BF16 in-kernel — and in a 35B-A3B MoE, the expert layers are almost all of the weight. Community benchmarks of this model class on GB10-class hardware show FP8 ahead at concurrency 1–4 (e.g. 51 vs 41 tok/s single-stream) with NVFP4 only pulling ahead at 8+ concurrent requests; this deployment caps concurrency at 4. FP8 is also closer to lossless than any 4-bit format.
+FP8 runs on this chip's fast native math path. NVFP4 doesn't — the chip has to convert it back to a bigger format before it can compute anything, which should make it slower in theory.
 
-The trade-off is memory: ~35 GB FP8 vs ~20 GB NVFP4. Prefer the NVFP4 image when colocating many models; prefer this one for latency and quality.
+**Update 2026-07-08:** this section used to say FP8 was faster, based on other people's online benchmarks. We tested it ourselves and found the opposite: **NVFP4 was faster — 65.6 vs 60.5 tokens/sec**, tested one request at a time. That old claim wasn't based on real testing on this machine, so don't trust it. Full numbers in `../nvidia-qwen3.6-35b-a3b-nvfp4-sglang/README.md`.
+
+What we haven't checked: what happens with several requests running at once (only tested one at a time so far), and whether NVFP4's answers are as accurate as FP8's — it's a smaller number format, so it can lose some precision, and we haven't verified how much that matters in practice.
+
+The trade-off is memory: FP8 uses about 35 GB, NVFP4 about 20 GB — pick NVFP4 if you want to run several models on this machine at once. For raw speed, NVFP4 wins per the test above. For "definitely accurate," FP8 is the safer bet until we check NVFP4's output quality.
 
 SGLang **v0.5.13+** is required for the `qwen3_5_moe` architecture; this image uses `lmsysorg/sglang:v0.5.14-cu130` (CUDA 13.x is required for sm_121a).
 
