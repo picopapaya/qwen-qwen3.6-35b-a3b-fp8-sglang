@@ -29,6 +29,19 @@ SGLang **v0.5.13+** is required for the `qwen3_5_moe` architecture; this image u
 
 Qwen3.6 ships a multi-token-prediction layer, retained in this checkpoint. Decode on the GB10 is memory-bandwidth-bound, so accepted draft tokens are nearly free — community reports show large single-stream speedups. Set `ENABLE_MTP=1` to launch with the SGLang cookbook's recommended flags (`--speculative-algorithm EAGLE`, 3 steps, 4 draft tokens, `SGLANG_ENABLE_SPEC_V2=1`). Off by default: not yet validated on SM_121a.
 
+## Running alongside another ~30B-class model
+
+The packaged defaults (`CONTEXT_LEN=262144`, `MEM_FRACTION=0.85`) assume this is the only large model on the GPU. To run it side by side with another ~30B-class model (e.g. the NVFP4 sibling image) on a roughly 50/50 memory split, set in `.env`:
+
+```
+CONTEXT_LEN=131072
+MEM_FRACTION=0.5
+```
+
+**Verified 2026-07-08:** both this image and the NVFP4 sibling started and ran healthy at the same time with these settings, and 4 concurrent requests at realistic prompt sizes (~7-8K tokens) all completed cleanly with no errors.
+
+**Caveat:** at these settings, SGLang's own computed KV cache pool is **102,798 tokens** — smaller than a single fully-used 131,072-token (128K) request. SGLang auto-reduces `MAX_RUNNING_REQUESTS` from 4 to 3 as a result. This configuration is fine for typical shorter prompts (like the ~7-8K tokens tested above) run concurrently, but it cannot actually serve 3-4 requests that are each independently using the full 128K context ceiling at the same time — treat `CONTEXT_LEN` here as a safety ceiling for your longest realistic prompt, not a guarantee of full-context concurrency.
+
 ## Requirements
 
 - NVIDIA GB10 / DGX Spark (SM_121a)
