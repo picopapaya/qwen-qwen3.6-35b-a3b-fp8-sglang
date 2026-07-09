@@ -4,14 +4,14 @@ Docker image that runs the **official FP8 checkpoint of Qwen3.6-35B-A3B** as an 
 
 The weights are pre-quantized to **FP8 (dynamic, e4m3)** by the Qwen team and served with [SGLang](https://github.com/sgl-project/sglang). Compare with [`nvidia-qwen3.6-35b-a3b-nvfp4-sglang`](https://github.com/picopapaya/nvidia-qwen3.6-35b-a3b-nvfp4-sglang), which serves NVIDIA's NVFP4 (ModelOpt) quantization of the same model.
 
-## What it is
+## What this image is
 
-Qwen3.6-35B-A3B is a hybrid-attention Mixture-of-Experts vision-language model:
+Qwen3.6-35B-A3B is a Mixture-of-Experts model that also understands images, not just text:
 
-- 35 billion total parameters, ~3 billion active per token (256 experts per MoE layer, 8 routed + 1 shared active), so it runs with the compute cost of a much smaller model.
-- Hybrid attention: 3 of every 4 layers use linear attention (Gated DeltaNet), every 4th layer uses full attention — long contexts are cheap in both compute and cache memory.
-- Multimodal: accepts text and images (the FP8 checkpoint keeps the vision encoder in BF16).
-- 262,144-token native context, and an MTP layer for speculative decoding.
+- 35 billion total parameters, but for any given word it only actually uses about 3 billion of them ("35B-A3B" = 35B total, ~3B active). The rest sit in memory ready to be picked, but don't add to the compute cost — it runs like a much smaller model while still having the knowledge of a much bigger one.
+- Most of its layers use a cheaper, memory-light form of attention (a technique called Gated DeltaNet); only 1 in every 4 layers uses the full, more expensive kind. This is why it can handle very long conversations without needing huge amounts of extra memory for each one.
+- Accepts both text and images (this checkpoint keeps the image-understanding part in a higher-precision format, BF16, rather than compressing it down to FP8 like the text part).
+- Supports up to 262,144 tokens (roughly 200,000 words) of context, and ships an extra "MTP" layer that can speed up generation — see below.
 
 ## FP8 vs NVFP4 on the GB10
 
@@ -27,7 +27,38 @@ SGLang **v0.5.13+** is required for the `qwen3_5_moe` architecture; this image u
 
 ## MTP speculative decoding (experimental)
 
-Qwen3.6 ships a multi-token-prediction layer, retained in this checkpoint. Decode on the GB10 is memory-bandwidth-bound, so accepted draft tokens are nearly free — community reports show large single-stream speedups. Set `ENABLE_MTP=1` to launch with the SGLang cookbook's recommended flags (`--speculative-algorithm EAGLE`, 3 steps, 4 draft tokens, `SGLANG_ENABLE_SPEC_V2=1`). Off by default: not yet validated on SM_121a.
+This chip is usually limited by how fast it can move data in and out of memory, not by how much raw computing it can do. MTP takes advantage of that: instead of generating one word at a time, it guesses a few words ahead and checks them together, which is nearly free when memory movement — not computation — is what's slowing things down. Qwen3.6 ships this extra layer built in.
+
+Set `ENABLE_MTP=1` to turn it on, using the settings the SGLang project recommends. It's off by default because it hasn't been thoroughly tested on this specific chip yet — turn it on, watch for problems, and turn it back off if anything looks wrong.
+
+## Configuration
+
+### Tunable via `.env`
+
+These have a default baked into the image, but you can override them per-deployment by setting them in a `.env` file next to `docker-compose.yml`. Docker Compose reads that file automatically and passes the values into the container when it starts — no image rebuild needed, just edit `.env` and restart.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `HF_TOKEN` | *(empty)* | Optional Hugging Face token — avoids download rate limits, not required (this model isn't gated) |
+| `CONTEXT_LEN` | `262144` | The longest conversation/prompt (in tokens) the server will accept |
+| `MEM_FRACTION` | `0.85` | How much of the GPU's memory this server is allowed to claim |
+| `ENABLE_MTP` | `0` | Set to `1` to turn on the speed feature described above |
+| `ATTENTION_BACKEND` | `triton` | Which kernel library handles the attention math — `flashinfer` measured ~30% faster decode on this box (2026-07-08) |
+
+### Fixed — not overridable via `.env`
+
+These define what this image *is*, not how it's tuned. Changing them means you're describing a different image, not adjusting this one.
+
+| Variable | Value | Why it's fixed |
+|---|---|---|
+| `MODEL_ID` | `Qwen/Qwen3.6-35B-A3B-FP8` | This is which model the image downloads and runs — that's the image's whole identity |
+| `QUANTIZATION` | `fp8` | Matches the checkpoint's actual format |
+| `KV_CACHE_DTYPE` | `auto` | Left to SGLang to pick automatically |
+| `MAX_RUNNING_REQUESTS` | `4` | Not currently wired up as a `.env` override — could be added if a need for it comes up |
+| `REASONING_PARSER` | `qwen3` | Needed so SGLang understands this model's "thinking" output format |
+| `TOOL_CALL_PARSER` | `qwen3_coder` | Needed so SGLang understands this model's function-calling output format |
+
+`EXTRA_ARGS` also exists (passed straight through to the underlying server command) but isn't wired to `.env` by default — it's commented out in `docker-compose.yml` as a documented escape hatch. Uncomment it there directly if you need to pass something not covered above.
 
 ## Running alongside another ~30B-class model
 
@@ -60,20 +91,6 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
 The server starts on port **30000** and exposes an OpenAI-compatible API once the health check passes (allow up to 10 minutes for the first run while the ~35 GB of weights download).
-
-## Configuration
-
-| Variable | Default | Description |
-|---|---|---|
-| `HF_TOKEN` | *(empty)* | Optional Hugging Face token (avoids anonymous rate limits) |
-| `CONTEXT_LEN` | `262144` | Maximum context length in tokens |
-| `MEM_FRACTION` | `0.85` | Fraction of VRAM reserved for weights + KV cache |
-| `MAX_RUNNING_REQUESTS` | `4` | Maximum concurrent requests |
-| `ENABLE_MTP` | `0` | Set to `1` for MTP speculative decoding (experimental) |
-| `REASONING_PARSER` | `qwen3` | SGLang reasoning parser |
-| `TOOL_CALL_PARSER` | `qwen3_coder` | SGLang tool-call parser (per the SGLang Qwen3.6 cookbook) |
-| `ATTENTION_BACKEND` | `triton` | Attention backend for the full-attention layers |
-| `EXTRA_ARGS` | *(empty)* | Extra flags passed directly to `sglang.launch_server` |
 
 ## LiteLLM router
 
