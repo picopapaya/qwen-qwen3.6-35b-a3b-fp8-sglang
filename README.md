@@ -15,13 +15,11 @@ Qwen3.6-35B-A3B is a Mixture-of-Experts model that also understands images, not 
 
 ## FP8 vs NVFP4 on the GB10
 
-FP8 runs on this chip's fast native math path. NVFP4 doesn't — the chip has to convert it back to a bigger format before it can compute anything, which should make it slower in theory.
+In theory FP8 should win here: it runs on this chip's fast native math path, while NVFP4 has to be converted back to a bigger format before the chip can compute with it. Measured on this box (2026-07-08, one request at a time), the opposite holds: **NVFP4 decodes faster — 65.6 vs 60.5 tokens/sec** — most likely because NVFP4 moves half as much data through memory, and on this workload that saving outweighs the conversion cost. Full numbers in `../nvidia-qwen3.6-35b-a3b-nvfp4-sglang/README.md`.
 
-**Update 2026-07-08:** this section used to say FP8 was faster, based on other people's online benchmarks. We tested it ourselves and found the opposite: **NVFP4 was faster — 65.6 vs 60.5 tokens/sec**, tested one request at a time. That old claim wasn't based on real testing on this machine, so don't trust it. Full numbers in `../nvidia-qwen3.6-35b-a3b-nvfp4-sglang/README.md`.
+Not yet checked: behavior with several requests running at once, and whether NVFP4's answers are as accurate as FP8's — it's a smaller number format, so it can lose some precision.
 
-What we haven't checked: what happens with several requests running at once (only tested one at a time so far), and whether NVFP4's answers are as accurate as FP8's — it's a smaller number format, so it can lose some precision, and we haven't verified how much that matters in practice.
-
-The trade-off is memory: FP8 uses about 35 GB, NVFP4 about 20 GB — pick NVFP4 if you want to run several models on this machine at once. For raw speed, NVFP4 wins per the test above. For "definitely accurate," FP8 is the safer bet until we check NVFP4's output quality.
+The other trade-off is memory: FP8 uses about 35 GB, NVFP4 about 20 GB — pick NVFP4 to run several models on this machine at once. For raw speed, NVFP4 wins per the measurement above. For "definitely accurate," FP8 is the safer bet until NVFP4's output quality is checked.
 
 SGLang **v0.5.13+** is required for the `qwen3_5_moe` architecture; this image uses `lmsysorg/sglang:v0.5.14-cu130` (CUDA 13.x is required for sm_121a).
 
