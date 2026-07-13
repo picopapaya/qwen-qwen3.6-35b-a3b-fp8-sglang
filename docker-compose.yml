@@ -14,10 +14,10 @@ services:
       KV_CACHE_DTYPE: "auto"
       CONTEXT_LEN: "${CONTEXT_LEN:-262144}"
       MEM_FRACTION: "${MEM_FRACTION:-0.85}"
-      MAX_RUNNING_REQUESTS: "4"
+      MAX_RUNNING_REQUESTS: "${MAX_RUNNING_REQUESTS:-4}"
       ENABLE_MTP: "${ENABLE_MTP:-0}"   # 1 = MTP speculative decoding (experimental on GB10)
       ATTENTION_BACKEND: "${ATTENTION_BACKEND:-triton}"
-      # EXTRA_ARGS: "--disable-cuda-graph"
+      EXTRA_ARGS: "${EXTRA_ARGS:-}"
     volumes:
       - hf-cache:/root/.cache/huggingface
     networks:
